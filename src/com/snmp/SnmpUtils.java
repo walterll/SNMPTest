@@ -268,8 +268,10 @@ public class SnmpUtils {
 		TableUtils utils = new TableUtils(snmp, new DefaultPDUFactory(PDU.GETBULK));//GETNEXT or GETBULK  
 		utils.setMaxNumRowsPerPDU(5);   //only for GETBULK, set max-repetitions, default is 10  
 		OID[] columnOids = new OID[] { 
-				new OID("1.3.6.1.2.1.2.2.1.10"), 
-	            new OID("1.3.6.1.2.1.2.2.1.16"),
+//				new OID("1.3.6.1.2.1.2.2.1.10"), 
+//	            new OID("1.3.6.1.2.1.2.2.1.16"),
+				new OID("1.3.6.1.2.1.31.1.1.1.6"),
+				new OID("1.3.6.1.2.1.31.1.1.1.10"),
 	    };
 		List<TableEvent> list = utils.getTable(target, columnOids, null, null);
 		 

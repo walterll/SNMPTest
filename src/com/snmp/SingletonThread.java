@@ -34,7 +34,8 @@ public class SingletonThread extends Thread{
 //		    		for (String Oid : portFlow.keySet()) {
 //		    			System.out.println("Oid: " + Oid + " Flow: " + portFlow.get(Oid));
 //		    		}
-		    		LogUtils.writeFlowData(ipAddr, portFlow);
+//		    		LogUtils.writeFlowData(ipAddr, portFlow);
+		    		LogUtils.writeFlowDataX(ipAddr, portFlow);
 				} catch (NullPointerException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();

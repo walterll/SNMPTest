@@ -13,8 +13,10 @@ import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.Writer;
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -27,8 +29,15 @@ import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.renderer.category.LineAndShapeRenderer;
 import org.jfree.data.category.CategoryDataset;
 import org.jfree.data.general.DatasetUtilities;
+import org.jfree.data.time.Day;
+import org.jfree.data.time.Hour;
+import org.jfree.data.time.Minute;
+import org.jfree.data.time.TimeSeries;
+import org.jfree.data.time.TimeSeriesCollection;
+
 
 public class LogUtils {
+	public static Map<String,Map<String, Flow>> lastFlow = new HashMap<>();
 	/**********************
 	 * 存储一次查询得到的交换机流量信息
 	 * @param ipAddr
@@ -80,6 +89,64 @@ public class LogUtils {
 		
 	}
 	
+	
+	/**********************
+	 * 存储一次查询得到的交换机流量信息
+	 * 此方法用于存储64位的流量信息
+	 * @param ipAddr
+	 * @param flowData
+	 * @throws IOException
+	 */
+		public static void writeFlowDataX(String ipAddr, Map<String, Long> flowData) throws IOException {
+			Calendar ca = Calendar.getInstance();
+	        int year = ca.get(Calendar.YEAR);//获取年份
+	        int month=ca.get(Calendar.MONTH) + 1;//获取月份  ////////////////月份最小为0,所以使用时要加1
+	        int day=ca.get(Calendar.DATE);//获取日
+	        int minute=ca.get(Calendar.MINUTE);//分 
+//	        int hour=ca.get(Calendar.HOUR);//小时 
+	        int hour=ca.get(Calendar.HOUR_OF_DAY);	//////////////////24小时制
+	        int second=ca.get(Calendar.SECOND);//秒
+	        int WeekOfYear = ca.get(Calendar.DAY_OF_WEEK); 
+	        String dayOfYear = year + "_" + month + "_" + day;
+	        String minuteOfDay = hour + ":" + minute;
+	        
+	        String filePath = "flowData/"  + ipAddr + "_" + dayOfYear;
+			judeDirExists(new File(filePath));
+			
+			
+			for (String Oid : flowData.keySet()) {
+//				System.out.println(Oid.substring(21));	//OID最后的端口编号
+//				if (Oid.substring(21, 22).equals("6"))
+//					System.out.println(Oid.substring(0, 21) + "10" + Oid.substring(22));
+//				PrintWriter fw;
+				Writer fw = null;
+		        try {
+//		        	fw = new PrintWriter(file);  	//会覆盖文件内容
+		        	if (Oid.substring(21, 22).equals("6")) {
+		        		String file = filePath + "/" + Oid.substring(23) + ".txt";
+		        		judeFileExists(new File(file));
+		        		fw = new FileWriter(file, true);
+		        		BufferedWriter bw = new BufferedWriter (fw);  
+		        		fw.write(minuteOfDay);
+		        		fw.write("  ");
+		        		fw.write(flowData.get(Oid).toString());
+		        		fw.write("  ");
+		        		fw.write(flowData.get(Oid.substring(0, 21) + "10" + Oid.substring(22)).toString());
+		        		fw.write("\r\n");
+		        		fw.flush();
+		        		fw.close();
+		        		
+		        		LogUtils.lastFlow.get(ipAddr).put(Oid.substring(23), 
+		        				new Flow(hour * 60 + minute, Long.valueOf(flowData.get(Oid).toString()),
+		        						Long.valueOf(flowData.get(Oid.substring(0, 21) + "10" + Oid.substring(22)).toString())));
+		        	}
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} 
+			}
+		}
+	
 	/*****************
 	 * 判断文件是否存在，不存在则创建
 	 * @param file
@@ -96,8 +163,7 @@ public class LogUtils {
                  // TODO Auto-generated catch block
                  e.printStackTrace();
              }
-         }
- 
+         } 
      }
  
      /*****************
@@ -115,8 +181,7 @@ public class LogUtils {
          } else {
              System.out.println("dir not exists, create it ...");
              file.mkdir();
-         }
- 
+         } 
      }
      
      /**************
@@ -143,8 +208,7 @@ public class LogUtils {
 				int time = hour * 60 + minute;
 				flowIn[time] = Long.valueOf(time2[1]);
 				flowOut[time] = Long.valueOf(time2[2]);
-			}
-			
+			}			
 		} catch (FileNotFoundException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -154,6 +218,52 @@ public class LogUtils {
 		}
      }
      
+     /**********************
+      * 读取端口最近半小时的流量数据
+      * @param ipAddr
+      * @param port
+      * @param dayOfYear
+      * @return
+      */
+     public static List<Flow> readLastHalfHourPortFlowData(String ipAddr, String port, String dayOfYear) {
+     	String path = "flowData/"  + ipAddr + "_" + dayOfYear + "/" + port + ".txt";
+    	Reader read;
+    	Calendar calendar = Calendar.getInstance();
+    	int minutes=calendar.get(Calendar.MINUTE);//分 
+    	int hours=calendar.get(Calendar.HOUR_OF_DAY);//小时
+    	int index = 0;
+    	List<Flow> flows = new ArrayList<>();
+    	if (minutes + hours * 60 > 30)
+    		index = hours * 60 + minutes - 30;
+    	else 
+     	index = 0;
+    	try {
+ 			read = new FileReader(new File(path));
+ 			BufferedReader br = new BufferedReader(read);
+ 			String tempString;
+ 			int row = 0;
+ 			while ((tempString = br.readLine()) != null) {
+ 				String[] time1 = tempString.split(":");
+ 				String[] time2 = time1[1].split("  ");
+ 				int hour = Integer.valueOf(time1[0]);
+ 				int minute = Integer.valueOf(time2[0]);
+ 				int time = hour * 60 + minute;
+ 				if (time < index)
+ 					continue;
+ 				flows.add(new Flow(time, Long.valueOf(time2[1]), Long.valueOf(time2[2])));
+// 					flowIn[time] = Long.valueOf(time2[1]);
+// 					flowOut[time] = Long.valueOf(time2[2]); 				
+ 			} 			
+ 		} catch (FileNotFoundException e) {
+ 			// TODO Auto-generated catch block
+ 			e.printStackTrace();
+ 		} catch (IOException e) {
+ 			// TODO Auto-generated catch block
+ 			e.printStackTrace();
+ 		}
+    	return flows;
+     }
+     
      /******************
       * 根据小时流量数据生成图形数据
       * @param flowIn
@@ -161,15 +271,15 @@ public class LogUtils {
       * @return
       */
      public static CategoryDataset createHourDataset(double[] flowIn, double[] flowOut) {
-    	 String[] rowKeys = {"FlowIn","FlowOut"};
-    	 String[] colKeys = new String[24];
+    	String[] rowKeys = {"FlowIn","FlowOut"};
+    	String[] colKeys = new String[24];
   		for (int i = 0; i < 24; i++) 
   			colKeys[i] = i + ":00";  		
     	 
-    	 double[][] data = new double[2][24];
-    	 data[0] = flowIn;
-    	 data[1] = flowOut;
-    	 return DatasetUtilities.createCategoryDataset(rowKeys, colKeys, data);
+    	double[][] data = new double[2][24];
+    	data[0] = flowIn;
+    	data[1] = flowOut;
+    	return DatasetUtilities.createCategoryDataset(rowKeys, colKeys, data);
      }
      
      /*********************
@@ -179,15 +289,15 @@ public class LogUtils {
       * @return
       */
      public static CategoryDataset createMinuteInOneHourDataset(double[] flowIn, double[] flowOut) {
-    	 String[] rowKeys = {"FlowIn","FlowOut"};
-    	 String[] colKeys = new String[59];
+    	String[] rowKeys = {"FlowIn","FlowOut"};
+    	String[] colKeys = new String[59];
   		for (int i = 0; i < 59; i++) 
   			colKeys[i] = String.valueOf(i + 1);  		
     	 
-    	 double[][] data = new double[2][59];
-    	 data[0] = flowIn;
-    	 data[1] = flowOut;
-    	 return DatasetUtilities.createCategoryDataset(rowKeys, colKeys, data);
+    	double[][] data = new double[2][59];
+    	data[0] = flowIn;
+    	data[1] = flowOut;
+    	return DatasetUtilities.createCategoryDataset(rowKeys, colKeys, data);
      }
      
      /********************
@@ -197,15 +307,15 @@ public class LogUtils {
       * @return
       */
      public static CategoryDataset createDataset(double[] flowIn, double[] flowOut) {
-    	 String[] rowKeys = {"FlowIn","FlowOut"};
-    	 String[] colKeys = new String[1440];
+    	String[] rowKeys = {"FlowIn","FlowOut"};
+    	String[] colKeys = new String[1440];
   		for (int i = 0; i < 1440; i++)
   			colKeys[i] = i / 60 + ":" + i % 60;
     	 
-    	 double[][] data = new double[2][1440];
-    	 data[0] = flowIn;
-    	 data[1] = flowOut;
-    	 return DatasetUtilities.createCategoryDataset(rowKeys, colKeys, data);
+    	double[][] data = new double[2][1440];
+    	data[0] = flowIn;
+    	data[1] = flowOut;
+    	return DatasetUtilities.createCategoryDataset(rowKeys, colKeys, data);
      }
      /**
  	 * 创建CategoryDataset对象
@@ -248,6 +358,57 @@ public class LogUtils {
  		renderer.setBaseItemLabelsVisible(true);
  		return jfreechart;
  	}
+ 	
+ // 根据CategoryDataset创建JFreeChart对象
+  	public static JFreeChart createChart(CategoryDataset categoryDataset, String title,
+  											String xLabel, String yLabel) {
+  		// 创建JFreeChart对象：ChartFactory.createLineChart
+  		JFreeChart jfreechart = ChartFactory.createLineChart(title, // 标题
+  				xLabel, // categoryAxisLabel （category轴，横轴，X轴标签）
+  				yLabel, // valueAxisLabel（value轴，纵轴，Y轴的标签）
+  				categoryDataset, // dataset
+  				PlotOrientation.VERTICAL, true, // legend
+  				false, // tooltips
+  				false); // URLs
+  		// 使用CategoryPlot设置各种参数。以下设置可以省略。
+  		CategoryPlot plot = (CategoryPlot)jfreechart.getPlot();
+  		// 背景色 透明度
+  		plot.setBackgroundAlpha(0.5f);
+  		// 前景色 透明度
+  		plot.setForegroundAlpha(0.5f);
+  		// 其他设置 参考 CategoryPlot类
+  		LineAndShapeRenderer renderer = (LineAndShapeRenderer)plot.getRenderer();
+  		renderer.setBaseShapesVisible(true); // series 点（即数据点）可见
+  		renderer.setBaseLinesVisible(true); // series 点（即数据点）间有连线可见
+  		renderer.setUseSeriesOffset(true); // 设置偏移量
+  		renderer.setBaseItemLabelGenerator(new StandardCategoryItemLabelGenerator());
+  		renderer.setBaseItemLabelsVisible(true);
+  		return jfreechart;
+  	}
+  	/***************
+  	 * 使用时间序列表生成一天的流量图
+  	 * @param flowIn	每小时输入流量增量
+  	 * @param flowOut	每小时输出流量增量
+  	 * @param title
+  	 * @param xLabel
+  	 * @param yLabel
+  	 * @return
+  	 */
+  	public static JFreeChart createChartX(double[] flowIn, double[] flowOut, String title,
+				String xLabel, String yLabel) {
+  		TimeSeriesCollection timeseriescollection = new TimeSeriesCollection();
+  		TimeSeries timeSeriesIn = new TimeSeries("FlowIn", Hour.class);
+  		TimeSeries timeSeriesOut = new TimeSeries("FlowOut", Hour.class);
+  		Day day = new Day(Calendar.getInstance().getTime());
+  		for (int i = 0; i < 24; i++) {
+  			timeSeriesIn.add(new Hour(i + 1, day), flowIn[i]);
+  			timeSeriesOut.add(new Hour(i + 1, day), flowOut[i]);
+  		}
+  		timeseriescollection.addSeries(timeSeriesIn);
+  		timeseriescollection.addSeries(timeSeriesOut);
+  		return ChartFactory.createTimeSeriesChart(title, 
+  				xLabel, yLabel, timeseriescollection, true, true, false);
+  	}
  	
  	/********************
  	 * 获得某一小时的分钟流量
@@ -293,13 +454,13 @@ public class LogUtils {
 	   				 break;
 	   			 }
 	   		 }
-	   		 for (int j = 59; j > 0; j--) {
+	   		 for (int j = 59; j >= 0; j--) {
 	   			 if (flowIn[i * 60 + j] != 0) {
 	   				 endFlowIn = flowIn[i * 60 + j];
 	   				 break;
 	   			 }
 	   		 }
-	   		 for (int j = 59; j > 0; j--) {
+	   		 for (int j = 59; j >= 0; j--) {
 	   			 if (flowOut[i * 60 + j] != 0) {
 	   				 endFlowOut = flowOut[i * 60 + j];
 	   				 break;
@@ -310,6 +471,11 @@ public class LogUtils {
  		}
  	}
  	
+ 	/*****************
+ 	 * 根据Calendar对象生成日期字符串
+ 	 * @param ca
+ 	 * @return
+ 	 */
  	public static String getDayOfYearStr(Calendar ca) {
  		int year = ca.get(Calendar.YEAR);//获取年份
         int month=ca.get(Calendar.MONTH) + 1;//获取月份  
